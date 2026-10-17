@@ -12,6 +12,7 @@ from .brain import Brain
 from .config import get_settings, load_env_file
 from .email_channels import GraphMail, ImapMail
 from .guards import email_should_skip, mask
+from .llm import build_llm
 from .service import ReplyService
 from .store import Store
 
@@ -65,17 +66,15 @@ async def email_loop(service, mail, s):
 
 
 def create_app(settings=None, anthropic_client=None, twilio_client=None, mail=None, validator=None,
-               now=None) -> FastAPI:
+               now=None, llm=None) -> FastAPI:
     if settings is None:
         load_env_file()
         settings = get_settings()
     s = settings
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-    if anthropic_client is None:
-        import anthropic
-
-        anthropic_client = anthropic.AsyncAnthropic(api_key=s.anthropic_api_key)
+    if llm is None:
+        llm = build_llm(s, anthropic_client)
     if twilio_client is None and s.twilio_account_sid:
         from twilio.rest import Client
 
@@ -88,17 +87,17 @@ def create_app(settings=None, anthropic_client=None, twilio_client=None, mail=No
         mail = build_email(s)
 
     store = Store(s.db_path)
-    brain = Brain(anthropic_client, s.model, s.business_name, s.knowledge_dir, s.booking_url)
+    brain = Brain(llm, s.business_name, s.knowledge_dir, s.booking_url)
 
     async def notify(subject, text):
         if mail:
             await mail.send(s.handoff_email, subject, text)
 
-    service = ReplyService(store, brain, s, notify)
     rules = BookingRules(tz=s.timezone, days=s.booking_days, start=s.booking_start, end=s.booking_end,
                          minutes=s.slot_minutes, days_ahead=s.booking_days_ahead)
     bookings = BookingService(store, mail, rules, s.business_name, s.owner_email, s.mailbox, dry_run=s.dry_run,
                               **({"now": now} if now else {}))
+    service = ReplyService(store, brain, s, notify, bookings)
 
     @contextlib.asynccontextmanager
     async def lifespan(app):

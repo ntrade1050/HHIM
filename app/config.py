@@ -41,6 +41,10 @@ class Settings:
     # Claude
     anthropic_api_key: str
     model: str
+    llm_provider: str   # anthropic | deepseek | openai | openrouter | openai_compatible
+    llm_base_url: str
+    llm_api_key: str
+    llm_model: str
     # WhatsApp (Twilio)
     public_base_url: str
     twilio_account_sid: str
@@ -80,6 +84,10 @@ def get_settings() -> Settings:
         booking_days_ahead=int(e("BOOKING_DAYS_AHEAD", "10")),
         anthropic_api_key=e("ANTHROPIC_API_KEY", ""),
         model=e("CLAUDE_MODEL", "claude-haiku-4-5-20251001"),
+        llm_provider=e("LLM_PROVIDER", "anthropic").lower(),
+        llm_base_url=e("LLM_BASE_URL", ""),
+        llm_api_key=e("LLM_API_KEY", ""),
+        llm_model=e("LLM_MODEL", ""),
         public_base_url=e("PUBLIC_BASE_URL", "").rstrip("/"),
         twilio_account_sid=e("TWILIO_ACCOUNT_SID", ""),
         twilio_auth_token=e("TWILIO_AUTH_TOKEN", ""),

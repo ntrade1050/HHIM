@@ -18,17 +18,19 @@ BASE = "https://desk.example.com"
 
 
 class FakeAnthropic:
-    def __init__(self, reply="Hello! We can help.", needs_human=False, fail=False):
+    def __init__(self, reply="Hello! We can help.", needs_human=False, fail=False, book=None):
         self.calls = []
-        self.reply, self.needs_human, self.fail = reply, needs_human, fail
+        self.reply, self.needs_human, self.fail, self.book = reply, needs_human, fail, book
         self.messages = self
 
     async def create(self, **kw):
         self.calls.append(kw)
         if self.fail:
             raise RuntimeError("api down")
-        block = SimpleNamespace(type="tool_use", input={
-            "reply": self.reply, "needs_human": self.needs_human, "summary": "Test enquiry"})
+        data = {"reply": self.reply, "needs_human": self.needs_human, "summary": "Test enquiry"}
+        if self.book is not None:
+            data["book"] = self.book(kw) if callable(self.book) else self.book
+        block = SimpleNamespace(type="tool_use", input=data)
         return SimpleNamespace(content=[block])
 
 

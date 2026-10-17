@@ -14,13 +14,23 @@ migration finishes), using Claude Haiku and only the business information in `kn
   - Rejects WhatsApp requests that aren't signed by Twilio.
   - `DRY_RUN=true` logs replies without sending anything.
 
+## Booking
+- On WhatsApp and email, the bot offers 3 real free times. The client picks one and gives their name and email, and it books in the chat.
+- Clients can also pick any time at `PUBLIC_BASE_URL/book`.
+- Every booking emails a confirmation with a calendar invite to the client and to `OWNER_EMAIL`.
+- The same slot can never be booked twice.
+
+## Switching AI model
+Claude is the default. To use DeepSeek, set `LLM_PROVIDER=deepseek` and `LLM_API_KEY`. The default model is `deepseek-flash`; set `LLM_MODEL=deepseek-v4-pro` for the bigger one. `openai`, `openrouter` and any `openai_compatible` API work the same way: see `.env.example`.
+If a model fails or returns nothing, the client still gets a polite booking-link reply.
+
 ## Run it on Windows (PowerShell)
 ```powershell
 cd reply-desk
 python -m venv .venv; .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 copy .env.example .env    # then fill it in
-python -m pytest -q       # 16 tests, all fakes, no cost
+python -m pytest -q       # 31 tests, all fakes, no cost
 uvicorn app.main:get_app --factory --port 8000
 ```
 Open http://localhost:8000/health to check it's running.
