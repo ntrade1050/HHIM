@@ -30,6 +30,7 @@ class Settings:
     auto_reply: bool
     max_replies_per_contact_per_day: int
     handoff_email: str
+    booking_url: str
     # Claude
     anthropic_api_key: str
     model: str
@@ -62,6 +63,7 @@ def get_settings() -> Settings:
         auto_reply=_bool("AUTO_REPLY", True),
         max_replies_per_contact_per_day=int(e("MAX_REPLIES_PER_CONTACT_PER_DAY", "20")),
         handoff_email=e("HANDOFF_EMAIL", ""),
+        booking_url=e("BOOKING_URL", ""),
         anthropic_api_key=e("ANTHROPIC_API_KEY", ""),
         model=e("CLAUDE_MODEL", "claude-haiku-4-5-20251001"),
         public_base_url=e("PUBLIC_BASE_URL", "").rstrip("/"),

@@ -23,7 +23,7 @@ Small businesses, individuals and sole traders, restaurants and takeaways, landl
 - Work is quoted as a fixed fee after the free consultation, based on what the client needs. Do not quote any price.
 
 ## Booking and contact
-- Book a free consultation: https://hhim.co.uk/free-consultation/ (name, email, phone and a short message).
+- Booking link (pick a time for the free consultation): https://hhim.co.uk/free-consultation/ [CONFIRM: replace with the Microsoft Bookings or Calendly page]
 - Phone: 0333 224 9380
 - Email: info@hhim.co.uk
 - London office: 124 City Road, London, EC1V 2NX

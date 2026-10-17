@@ -84,7 +84,7 @@ def create_app(settings=None, anthropic_client=None, twilio_client=None, mail=No
         mail = build_email(s)
 
     store = Store(s.db_path)
-    brain = Brain(anthropic_client, s.model, s.business_name, s.knowledge_dir)
+    brain = Brain(anthropic_client, s.model, s.business_name, s.knowledge_dir, s.booking_url)
 
     async def notify(subject, text):
         if mail:

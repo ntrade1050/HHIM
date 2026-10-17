@@ -134,7 +134,8 @@ def test_ai_failure_sends_holding_reply_and_alerts_staff(tmp_path):
     app, ai, tw = make(tmp_path, ai=FakeAnthropic(fail=True), mail=mail)
     with TestClient(app) as c:
         signed_post(c, {"MessageSid": "S", "From": "whatsapp:+1", "Body": "hi"})
-    assert "get back to you shortly" in tw.sent[0]["body"]
+    assert "book a free consultation" in tw.sent[0]["body"]
+    assert "call" not in tw.sent[0]["body"].lower() and "get back to you" not in tw.sent[0]["body"]
     assert mail.sent and mail.sent[0][0] == "owner@hhim.co.uk"
 
 
