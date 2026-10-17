@@ -25,13 +25,13 @@ input,textarea{font:16px system-ui;color:var(--ink);background:var(--bg);border:
 <p><b>2. Choose a time</b></p><div class="row" id="times"></div></section>
 <form class="card" id="form">
 <label>Your name<input id="name" required autocomplete="name"></label>
-<label>Email (for your confirmation)<input id="email" type="email" required autocomplete="email"></label>
-<label>Phone<input id="phone" type="tel" required autocomplete="tel"></label>
+__EMAIL_FIELD__
+<label>Mobile number (for your confirmation text)<input id="phone" type="tel" required autocomplete="tel"></label>
 <label>What would you like help with? (optional)<textarea id="note" rows="3"></textarea></label>
 <p class="err" id="err" hidden></p>
 <button class="go" id="go" type="submit" disabled>Choose a time first</button></form>
 <section class="card" id="done" hidden><h1>You're booked in</h1><p id="doneText"></p>
-<p class="muted">A confirmation with a calendar invite has been emailed to you.</p></section>
+<p class="muted">__DONE_NOTE__</p></section>
 </main><script>
 let slots=[],day=null,start=null;const $=id=>document.getElementById(id);
 function draw(){const days=[...new Set(slots.map(s=>s.day))];if(!day)day=days[0];
@@ -41,12 +41,18 @@ if(!days.length)$("days").textContent="No times are free at the moment. Please e
 $("go").disabled=!start;$("go").textContent=start?"Book "+day+" at "+slots.find(s=>s.start===start).time:"Choose a time first"}
 async function load(){const r=await fetch("api/slots");slots=(await r.json()).slots;if(start&&!slots.some(s=>s.start===start))start=null;draw()}
 $("form").onsubmit=async e=>{e.preventDefault();$("err").hidden=true;$("go").disabled=true;
-const r=await fetch("api/book",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({start,name:$("name").value,email:$("email").value,phone:$("phone").value,note:$("note").value})});
+const r=await fetch("api/book",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({start,name:$("name").value,email:$("email")?$("email").value:"",phone:$("phone").value,note:$("note").value})});
 const j=await r.json();if(r.ok){$("pick").hidden=$("form").hidden=true;$("done").hidden=false;$("doneText").textContent=j.when+" (UK time)."}
 else{$("err").textContent=j.error||"Something went wrong. Please try again.";$("err").hidden=false;await load()}};
 load();
 </script></body></html>"""
 
 
-def render(business: str, minutes: int) -> str:
-    return PAGE.replace("__BIZ__", html.escape(business)).replace("__MIN__", str(int(minutes)))
+EMAIL_FIELD = '<label>Email (for your calendar invite)<input id="email" type="email" required autocomplete="email"></label>'
+
+
+def render(business: str, minutes: int, ask_email: bool = True) -> str:
+    done = ("A confirmation with a calendar invite has been emailed to you." if ask_email
+            else "We've texted you a confirmation and will send a reminder the day before.")
+    return (PAGE.replace("__BIZ__", html.escape(business)).replace("__MIN__", str(int(minutes)))
+            .replace("__EMAIL_FIELD__", EMAIL_FIELD if ask_email else "").replace("__DONE_NOTE__", done))

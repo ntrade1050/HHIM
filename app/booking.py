@@ -87,10 +87,16 @@ class BookingError(Exception):
 
 class BookingService:
     def __init__(self, store, mail, rules: BookingRules, business: str, owner_email: str, mailbox: str,
-                 dry_run: bool = False, now=lambda: datetime.now(timezone.utc)):
+                 dry_run: bool = False, now=lambda: datetime.now(timezone.utc), sms=None, owner_phone: str = ""):
         self.store, self.mail, self.rules = store, mail, rules
         self.business, self.owner_email, self.mailbox = business, owner_email, mailbox
         self.dry_run, self.now = dry_run, now
+        self.sms, self.owner_phone = sms, owner_phone
+
+    @property
+    def wants_email(self) -> bool:
+        """Only ask clients for an email address when we can actually send one."""
+        return bool(self.mail)
 
     def free_slots(self) -> list[dict]:
         taken = self.store.booked_keys()
@@ -99,11 +105,11 @@ class BookingService:
             for t in all_slots(self.rules, self.now()) if to_key(t) not in taken
         ]
 
-    async def book(self, start: str, name: str, email: str, phone: str, note: str = "") -> dict:
+    async def book(self, start: str, name: str, email: str, phone: str, note: str = "", source: str = "web") -> dict:
         name, email, phone, note = name.strip()[:100], email.strip().lower()[:200], phone.strip()[:40], note.strip()[:1000]
         if not name:
             raise BookingError("Please enter your name.")
-        if not EMAIL_RE.match(email):
+        if (email or self.wants_email) and not EMAIL_RE.match(email):
             raise BookingError("Please enter a valid email address so we can send your confirmation.")
         if len(re.sub(r"\D", "", phone)) < 10:
             raise BookingError("Please enter a valid phone number.")
@@ -111,16 +117,49 @@ class BookingService:
         if start not in valid:
             raise BookingError("That time isn't available. Please choose another slot.")
         booking_id = uuid.uuid4().hex[:12]
-        if not self.store.add_booking(booking_id, start, name, email, phone, note):
+        if not self.store.add_booking(booking_id, start, name, email, phone, note, source):
             raise BookingError("Sorry, that slot has just been taken. Please choose another time.")
 
         when = human(valid[start], self.rules)
-        result = {"id": booking_id, "start": start, "when": when, "name": name, "email": email, "emailed": []}
+        result = {"id": booking_id, "start": start, "when": when, "name": name, "email": email, "emailed": [],
+                  "texted": []}
+        await self._text(when, name, email, phone, note, source, result)
         await self._confirm(booking_id, valid[start], when, name, email, phone, note, result)
         return result
 
+    async def _text(self, when, name, email, phone, note, source, result):
+        """SMS: the client (unless they booked inside WhatsApp, where the chat confirms) and the owner."""
+        if not self.sms:
+            return
+        first = name.split()[0]
+        if source != "whatsapp":
+            ok = await self.sms.send(phone, f"{self.business}: Hi {first}, your free consultation is confirmed for "
+                                            f"{when} (UK time). We'll text you a reminder the day before.")
+            if ok:
+                result["texted"].append("client")
+        if self.owner_phone:
+            ok = await self.sms.send(self.owner_phone, f"New booking: {name}, {when}. Phone {phone}"
+                                     + (f", {email}" if email else "") + f". Via {source}." + (f" {note}" if note else ""))
+            if ok:
+                result["texted"].append("owner")
+
+    async def send_due_reminders(self, hours_before: int = 24) -> int:
+        """Text each client once, about `hours_before` ahead of their appointment."""
+        if not (self.sms and self.sms.ready):
+            return 0
+        now = self.now()
+        sent = 0
+        for b in self.store.due_reminders(to_key(now), to_key(now + timedelta(hours=hours_before))):
+            start = datetime.strptime(b["start_utc"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            first = b["name"].split()[0]
+            self.store.mark_reminded(b["id"])  # mark first so a crash can't cause repeat texts
+            if await self.sms.send(b["phone"], f"{self.business}: Reminder, {first}: your free consultation is "
+                                               f"{human(start, self.rules)} (UK time)."):
+                sent += 1
+        return sent
+
     async def _confirm(self, booking_id, start, when, name, email, phone, note, result):
-        if not self.mail:
+        if not (self.mail and email):
             return
         invite = ics(f"{booking_id}@reply-desk", start, self.rules.minutes, f"{self.rules.title} - {self.business}",
                      f"{self.rules.title} with {self.business}.\nClient: {name}, {phone}, {email}",

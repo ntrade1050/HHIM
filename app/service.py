@@ -21,7 +21,8 @@ class ReplyService:
     async def _try_booking(self, channel: str, contact: str, answer) -> str | None:
         """If the AI asked to book, book it for real and return the confirmation (or a retry message)."""
         b = answer.book or {}
-        if not (self.bookings and b.get("slot") and b.get("name") and b.get("email")):
+        need_email = self.bookings.wants_email if self.bookings else True
+        if not (self.bookings and b.get("slot") and b.get("name") and (b.get("email") or not need_email)):
             return None
         phone = str(b.get("phone") or "")
         if channel == "whatsapp" and len("".join(c for c in phone if c.isdigit())) < 10:
@@ -29,15 +30,18 @@ class ReplyService:
         from .booking import BookingError  # local import keeps modules independent
 
         try:
-            result = await self.bookings.book(str(b["slot"]), str(b["name"]), str(b["email"]), phone,
-                                              f"Booked in {channel} chat. {answer.summary}")
+            result = await self.bookings.book(str(b["slot"]), str(b["name"]), str(b.get("email") or ""), phone,
+                                              f"Booked in {channel} chat. {answer.summary}", source=channel)
         except BookingError as exc:
             free = self.bookings.free_slots()[:3]
             options = " ".join(f"{i}) {s['day']} {s['time']}" for i, s in enumerate(free, 1))
             return f"{exc} Free times: {options}" if options else str(exc)
         first = str(b["name"]).split()[0]
-        text = (f"Confirmed, {first}: your free consultation is booked for {result['when']} (UK time). "
-                f"A confirmation with a calendar invite is on its way to {result['email']}.")
+        text = f"Confirmed, {first}: your free consultation is booked for {result['when']} (UK time)."
+        if result["email"] and self.bookings.wants_email:
+            text += f" A confirmation with a calendar invite is on its way to {result['email']}."
+        if self.bookings.sms and self.bookings.sms.ready and self.s.reminder_hours > 0:
+            text += " We'll text you a reminder the day before."
         if channel == "email":
             text += f"\n\nKind regards,\n{self.s.business_name}"
         return text
@@ -75,7 +79,7 @@ class ReplyService:
         return outcome
 
     async def _handover(self, channel, contact, text, reply, summary, label=""):
-        if not (self.notify and self.s.handoff_email):
+        if not self.notify:
             return
         body = (
             f"A customer needs a person.\n\nChannel: {channel}\nFrom: {label or contact}\n"

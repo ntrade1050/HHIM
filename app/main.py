@@ -15,6 +15,7 @@ from .config import get_settings, load_env_file
 from .email_channels import GraphMail, ImapMail
 from .guards import email_should_skip, mask
 from .llm import build_llm
+from .sms import Sms
 from .service import ReplyService
 from .store import Store
 
@@ -91,22 +92,43 @@ def create_app(settings=None, anthropic_client=None, twilio_client=None, mail=No
     store = Store(s.db_path)
     brain = Brain(llm, s.business_name, s.knowledge_dir, s.booking_url)
 
+    sms = Sms(twilio_client, s.sms_from, dry_run=s.dry_run)
+
     async def notify(subject, text):
-        if mail:
+        """Tell the owner: SMS to OWNER_PHONE and/or email to HANDOFF_EMAIL, whichever is set up."""
+        if s.owner_phone:
+            await sms.send(s.owner_phone, f"{subject[:120]}\n{text.split('Their message:')[-1].strip()[:300]}")
+        if mail and s.handoff_email:
             await mail.send(s.handoff_email, subject, text)
 
     rules = BookingRules(tz=s.timezone, days=s.booking_days, start=s.booking_start, end=s.booking_end,
                          minutes=s.slot_minutes, days_ahead=s.booking_days_ahead)
     bookings = BookingService(store, mail, rules, s.business_name, s.owner_email, s.mailbox, dry_run=s.dry_run,
-                              **({"now": now} if now else {}))
+                              sms=sms, owner_phone=s.owner_phone, **({"now": now} if now else {}))
+    brain.ask_email = bookings.wants_email
     service = ReplyService(store, brain, s, notify, bookings)
+
+    async def reminder_loop():
+        while True:
+            try:
+                n = await bookings.send_due_reminders(s.reminder_hours)
+                if n:
+                    log.info("sent %d reminder(s)", n)
+            except Exception:
+                log.exception("reminders failed")
+            await asyncio.sleep(300)
 
     @contextlib.asynccontextmanager
     async def lifespan(app):
-        task = asyncio.create_task(email_loop(service, mail, s)) if mail and s.poll_seconds > 0 else None
-        log.info("Reply desk started: email=%s dry_run=%s auto_reply=%s", s.email_provider, s.dry_run, s.auto_reply)
+        tasks = []
+        if mail and s.poll_seconds > 0:
+            tasks.append(asyncio.create_task(email_loop(service, mail, s)))
+        if s.reminder_hours > 0 and sms.ready:
+            tasks.append(asyncio.create_task(reminder_loop()))
+        log.info("Reply desk started: email=%s sms=%s dry_run=%s auto_reply=%s", s.email_provider, sms.ready,
+                 s.dry_run, s.auto_reply)
         yield
-        if task:
+        for task in tasks:
             task.cancel()
 
     app = FastAPI(title="Reply Desk", lifespan=lifespan)
@@ -115,7 +137,7 @@ def create_app(settings=None, anthropic_client=None, twilio_client=None, mail=No
 
     @app.get("/book", response_class=HTMLResponse)
     async def book_page():
-        return render_book_page(s.business_name, s.slot_minutes)
+        return render_book_page(s.business_name, s.slot_minutes, ask_email=bookings.wants_email)
 
     @app.get("/api/slots")
     async def slots():

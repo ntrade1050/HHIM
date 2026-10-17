@@ -14,8 +14,8 @@ REPLY_SCHEMA = {
         "summary": {"type": "string", "description": "One line for staff: who they are and what they want."},
         "book": {
             "type": "object",
-            "description": "Include ONLY when the customer has chosen a time AND given name and email (and phone on "
-            "email). Otherwise leave it out.",
+            "description": "Include ONLY when the customer has chosen a time AND given every detail the booking "
+            "rules ask for. Otherwise leave it out.",
             "properties": {
                 "slot": {"type": "string", "description": "The code in [brackets] of the chosen free time."},
                 "name": {"type": "string"},
@@ -53,8 +53,8 @@ How to reply:
 
 Booking the free consultation (in this chat):
 - When they ask to book, or once you know their need and business type, offer 3 times from FREE TIMES as a short numbered list (day and time only, never the codes), and mention they can also pick any time at {booking_url}.
-- When they choose a time (by number, day or time), ask for anything still missing: full name and email address{phone_rule}. One short question.
-- When you have the chosen time, name and email{phone_need}, fill "book" with the [code] of that time. Do not say it is confirmed; the system confirms it.
+- When they choose a time (by number, day or time), ask for anything still missing: {needed}. One short question.
+- When you have the chosen time and {needed}, fill "book" with the [code] of that time. Do not say it is confirmed; the system confirms it.
 - If their preferred time isn't in FREE TIMES, offer the nearest free times.
 - Never say someone will call, contact or get back to them. The next step is always booking.
 
@@ -92,13 +92,16 @@ def format_slots(slots: list[dict]) -> str:
 
 
 def system_prompt(business: str, knowledge: str, channel: str, slots: list[dict] | None = None,
-                  booking_url: str = "") -> str:
-    email = channel == "email"
+                  booking_url: str = "", ask_email: bool = True) -> str:
+    needed = ["their full name"]
+    if ask_email:
+        needed.append("email address")
+    if channel == "email":
+        needed.append("mobile number")
     return RULES.format(
         business=business, style=CHANNEL_STYLE[channel].format(business=business),
         knowledge=knowledge or "(none provided yet)", slots=format_slots(slots or []),
-        booking_url=booking_url or "our booking page",
-        phone_rule=" and phone number" if email else "", phone_need=" and phone" if email else "",
+        booking_url=booking_url or "our booking page", needed=" and ".join(needed),
     )
 
 
@@ -127,6 +130,7 @@ class Brain:
     def __init__(self, llm, business: str, knowledge_dir: str, booking_url: str = ""):
         self.llm = llm  # AnthropicLLM / OpenAICompatibleLLM (or a fake in tests)
         self.business, self.knowledge_dir, self.booking_url = business, knowledge_dir, booking_url
+        self.ask_email = True  # set False when no email account is connected (e.g. during the Outlook move)
 
     def holding(self, channel: str, summary: str = "") -> Answer:
         text = HOLDING[channel].format(business=self.business, booking=self.booking_url or "(booking link)")
@@ -136,7 +140,7 @@ class Brain:
         knowledge = load_knowledge(self.knowledge_dir)  # re-read each time so edits apply instantly
         try:
             data = await self.llm.complete_json(
-                system_prompt(self.business, knowledge, channel, slots, self.booking_url),
+                system_prompt(self.business, knowledge, channel, slots, self.booking_url, self.ask_email),
                 to_messages(history), REPLY_SCHEMA,
             )
             reply = str(data.get("reply", "")).strip()

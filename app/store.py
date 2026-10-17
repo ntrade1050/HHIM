@@ -22,6 +22,12 @@ class Store:
                     phone TEXT, note TEXT, created REAL);
                 """
             )
+            for col in ("source TEXT DEFAULT 'web'", "reminded INTEGER DEFAULT 0"):  # upgrade older databases
+                try:
+                    self._db.execute(f"ALTER TABLE bookings ADD COLUMN {col}")
+                except sqlite3.OperationalError:
+                    pass
+            self._db.commit()
 
     def claim(self, key: str) -> bool:
         """Mark a message as handled. False if it was already handled (dedupe/retries)."""
@@ -49,12 +55,26 @@ class Store:
             ).fetchall()
         return [{"role": r, "content": t} for r, t in reversed(rows)]
 
-    def add_booking(self, booking_id, start_utc, name, email, phone, note) -> bool:
+    def due_reminders(self, from_key: str, until_key: str) -> list[dict]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, start_utc, name, phone FROM bookings WHERE reminded=0 AND start_utc>? AND start_utc<=?",
+                (from_key, until_key)).fetchall()
+        return [dict(zip(("id", "start_utc", "name", "phone"), r)) for r in rows]
+
+    def mark_reminded(self, booking_id: str) -> None:
+        with self._lock:
+            self._db.execute("UPDATE bookings SET reminded=1 WHERE id=?", (booking_id,))
+            self._db.commit()
+
+    def add_booking(self, booking_id, start_utc, name, email, phone, note, source="web") -> bool:
         """False if the slot is already taken (the UNIQUE constraint stops double-booking)."""
         with self._lock:
             try:
-                self._db.execute("INSERT INTO bookings VALUES (?,?,?,?,?,?,?)",
-                                 (booking_id, start_utc, name, email, phone, note, time.time()))
+                self._db.execute(
+                    "INSERT INTO bookings (id, start_utc, name, email, phone, note, created, source, reminded) "
+                    "VALUES (?,?,?,?,?,?,?,?,0)",
+                    (booking_id, start_utc, name, email, phone, note, time.time(), source))
                 self._db.commit()
                 return True
             except sqlite3.IntegrityError:

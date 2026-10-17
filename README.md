@@ -30,7 +30,7 @@ cd reply-desk
 python -m venv .venv; .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 copy .env.example .env    # then fill it in
-python -m pytest -q       # 32 tests, all fakes, no cost
+python -m pytest -q       # 39 tests, all fakes, no cost
 uvicorn app.main:get_app --factory --port 8000
 ```
 Open http://localhost:8000/health to check it's running.
