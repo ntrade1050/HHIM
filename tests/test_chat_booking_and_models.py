@@ -108,3 +108,17 @@ def test_provider_presets(tmp_path):
     s.llm_provider, s.llm_api_key = "deepseek", ""
     with pytest.raises(RuntimeError):
         build_llm(s)
+
+
+def test_local_test_chat_only_when_enabled(tmp_path):
+    app, mail, tw = make(tmp_path, FakeAnthropic(reply="Limited company or sole trader?"))
+    with TestClient(app) as c:
+        assert c.get("/chat").status_code == 404  # off by default
+    s = settings(tmp_path, test_chat=True, db_path=str(tmp_path / "c.db"))
+    app = create_app(s, anthropic_client=FakeAnthropic(reply="Limited company or sole trader?"),
+                     twilio_client=FakeTwilio(), mail=FakeMail([]), validator=RequestValidator(TOKEN))
+    with TestClient(app) as c:
+        assert c.get("/chat").status_code == 200
+        r = c.post("/api/chat", json={"session": "a1", "channel": "whatsapp", "phone": "07700 900000",
+                                      "message": "I run a takeaway"}).json()
+    assert r == {"reply": "Limited company or sole trader?", "needs_human": False}

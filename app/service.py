@@ -16,6 +16,7 @@ class ReplyService:
     def __init__(self, store: Store, brain: Brain, settings, notify: Notifier | None = None, bookings=None):
         self.store, self.brain, self.s = store, brain, settings
         self.notify, self.bookings = notify, bookings
+        self.last_answer = {}  # (channel, contact) -> last Answer, used by the local test chat
 
     async def _try_booking(self, channel: str, contact: str, answer) -> str | None:
         """If the AI asked to book, book it for real and return the confirmation (or a retry message)."""
@@ -24,7 +25,7 @@ class ReplyService:
             return None
         phone = str(b.get("phone") or "")
         if channel == "whatsapp" and len("".join(c for c in phone if c.isdigit())) < 10:
-            phone = contact.replace("whatsapp:", "")
+            phone = contact.replace("whatsapp:", "").split("#")[0]
         from .booking import BookingError  # local import keeps modules independent
 
         try:
@@ -57,6 +58,7 @@ class ReplyService:
         booked_text = await self._try_booking(channel, contact, answer)
         if booked_text:
             answer.reply = booked_text
+        self.last_answer[(channel, contact)] = answer
 
         if self.s.dry_run:
             log.info("DRY RUN channel=%s contact=%s needs_human=%s", channel, mask(contact), answer.needs_human)

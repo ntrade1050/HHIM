@@ -30,6 +30,7 @@ class Settings:
     auto_reply: bool
     max_replies_per_contact_per_day: int
     handoff_email: str
+    test_chat: bool
     booking_url: str
     owner_email: str
     timezone: str
@@ -74,6 +75,7 @@ def get_settings() -> Settings:
         auto_reply=_bool("AUTO_REPLY", True),
         max_replies_per_contact_per_day=int(e("MAX_REPLIES_PER_CONTACT_PER_DAY", "20")),
         handoff_email=e("HANDOFF_EMAIL", ""),
+        test_chat=_bool("TEST_CHAT", False),
         booking_url=e("BOOKING_URL", "") or (e("PUBLIC_BASE_URL", "").rstrip("/") + "/book" if e("PUBLIC_BASE_URL") else ""),
         owner_email=e("OWNER_EMAIL", "") or e("HANDOFF_EMAIL", ""),
         timezone=e("TIMEZONE", "Europe/London"),

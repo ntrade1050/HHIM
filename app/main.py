@@ -2,11 +2,13 @@
 import asyncio
 import contextlib
 import logging
+import re
 
 from fastapi import BackgroundTasks, FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from .book_page import render as render_book_page
+from .chat_page import render as render_chat_page
 from .booking import BookingError, BookingRules, BookingService
 from .brain import Brain
 from .config import get_settings, load_env_file
@@ -136,6 +138,33 @@ def create_app(settings=None, anthropic_client=None, twilio_client=None, mail=No
         log.info("booking %s at %s for %s emailed=%s", result["id"], result["start"], mask(result["email"]),
                  result["emailed"])
         return {"when": result["when"], "id": result["id"]}
+
+    if s.test_chat:
+        model_label = s.model if s.llm_provider == "anthropic" else f"{s.llm_provider}: {getattr(llm, 'model', '')}"
+
+        @app.get("/chat", response_class=HTMLResponse)
+        async def chat_page():
+            return render_chat_page(s.business_name, model_label)
+
+        @app.post("/api/chat")
+        async def chat(request: Request):
+            data = await request.json()
+            channel = "email" if data.get("channel") == "email" else "whatsapp"
+            message = str(data.get("message") or "").strip()[:4000]
+            if not message:
+                return JSONResponse({"error": "Type a message first."}, status_code=400)
+            session = re.sub(r"[^a-z0-9]", "", str(data.get("session") or ""))[:20] or "x"
+            phone = re.sub(r"[^\d+]", "", str(data.get("phone") or ""))
+            contact = f"whatsapp:{phone}#{session}" if channel == "whatsapp" else f"test-{session}@example.com"
+
+            async def send(_reply):
+                return None  # the page shows the reply; nothing goes to WhatsApp or email
+
+            outcome = await service.handle(channel, contact, message, send, f"Test chat {session}")
+            last = (store.history(channel, contact, 1) or [{}])[-1]
+            reply = last.get("content", "") if last.get("role") == "assistant" else f"(no reply: {outcome})"
+            last_answer = service.last_answer.get((channel, contact))
+            return {"reply": reply, "needs_human": bool(last_answer and last_answer.needs_human)}
 
     @app.get("/health")
     async def health():
