@@ -6,3 +6,4 @@ anthropic==1.15.0
 twilio==9.12.0
 msal==1.39.0
 pytest==9.1.1
+tzdata==2025.2

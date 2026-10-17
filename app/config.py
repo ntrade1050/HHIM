@@ -31,6 +31,13 @@ class Settings:
     max_replies_per_contact_per_day: int
     handoff_email: str
     booking_url: str
+    owner_email: str
+    timezone: str
+    booking_days: str
+    booking_start: str
+    booking_end: str
+    slot_minutes: int
+    booking_days_ahead: int
     # Claude
     anthropic_api_key: str
     model: str
@@ -63,7 +70,14 @@ def get_settings() -> Settings:
         auto_reply=_bool("AUTO_REPLY", True),
         max_replies_per_contact_per_day=int(e("MAX_REPLIES_PER_CONTACT_PER_DAY", "20")),
         handoff_email=e("HANDOFF_EMAIL", ""),
-        booking_url=e("BOOKING_URL", ""),
+        booking_url=e("BOOKING_URL", "") or (e("PUBLIC_BASE_URL", "").rstrip("/") + "/book" if e("PUBLIC_BASE_URL") else ""),
+        owner_email=e("OWNER_EMAIL", "") or e("HANDOFF_EMAIL", ""),
+        timezone=e("TIMEZONE", "Europe/London"),
+        booking_days=e("BOOKING_DAYS", "mon,tue,wed,thu,fri"),
+        booking_start=e("BOOKING_START", "09:30"),
+        booking_end=e("BOOKING_END", "17:00"),
+        slot_minutes=int(e("SLOT_MINUTES", "30")),
+        booking_days_ahead=int(e("BOOKING_DAYS_AHEAD", "10")),
         anthropic_api_key=e("ANTHROPIC_API_KEY", ""),
         model=e("CLAUDE_MODEL", "claude-haiku-4-5-20251001"),
         public_base_url=e("PUBLIC_BASE_URL", "").rstrip("/"),

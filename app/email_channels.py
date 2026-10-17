@@ -1,5 +1,6 @@
 """Email in/out. Microsoft 365 (Graph, the target) and IMAP/SMTP (IONOS, during migration)."""
 import asyncio
+import base64
 import email
 import email.utils
 import html
@@ -111,7 +112,7 @@ class GraphMail:
         )
         r.raise_for_status()
 
-    async def send(self, to: str, subject: str, text: str) -> None:
+    async def send(self, to: str, subject: str, text: str, attachments=None) -> None:
         body = {
             "message": {
                 "subject": subject,
@@ -120,6 +121,12 @@ class GraphMail:
             },
             "saveToSentItems": True,
         }
+        if attachments:
+            body["message"]["attachments"] = [
+                {"@odata.type": "#microsoft.graph.fileAttachment", "name": name, "contentType": ctype,
+                 "contentBytes": base64.b64encode(data).decode("ascii")}
+                for name, ctype, data in attachments
+            ]
         r = await self._http.post(f"{GRAPH}/users/{self.mailbox}/sendMail", headers=await self._headers(), json=body)
         r.raise_for_status()
 
@@ -189,8 +196,11 @@ class ImapMail:
     async def mark_done(self, msg: Incoming) -> None:
         await asyncio.to_thread(self._mark_seen, msg.ref["uid"])
 
-    async def send(self, to: str, subject: str, text: str) -> None:
+    async def send(self, to: str, subject: str, text: str, attachments=None) -> None:
         em = EmailMessage()
         em["From"], em["To"], em["Subject"] = self.mailbox, to, subject
         em.set_content(text)
+        for name, ctype, data in attachments or []:
+            maintype, subtype = ctype.split("/", 1)
+            em.add_attachment(data, maintype=maintype, subtype=subtype, filename=name)
         await asyncio.to_thread(self._smtp_send, em)

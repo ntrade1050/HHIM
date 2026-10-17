@@ -54,8 +54,9 @@ class FakeMail:
     async def mark_done(self, msg):
         self.done.append(msg.key)
 
-    async def send(self, to, subject, text):
+    async def send(self, to, subject, text, attachments=None):
         self.sent.append((to, subject, text))
+        self.attachments = getattr(self, "attachments", []) + list(attachments or [])
 
 
 def settings(tmp_path, **over):

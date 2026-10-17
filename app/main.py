@@ -4,7 +4,10 @@ import contextlib
 import logging
 
 from fastapi import BackgroundTasks, FastAPI, Request, Response
+from fastapi.responses import HTMLResponse, JSONResponse
 
+from .book_page import render as render_book_page
+from .booking import BookingError, BookingRules, BookingService
 from .brain import Brain
 from .config import get_settings, load_env_file
 from .email_channels import GraphMail, ImapMail
@@ -61,7 +64,8 @@ async def email_loop(service, mail, s):
         await asyncio.sleep(s.poll_seconds)
 
 
-def create_app(settings=None, anthropic_client=None, twilio_client=None, mail=None, validator=None) -> FastAPI:
+def create_app(settings=None, anthropic_client=None, twilio_client=None, mail=None, validator=None,
+               now=None) -> FastAPI:
     if settings is None:
         load_env_file()
         settings = get_settings()
@@ -91,6 +95,10 @@ def create_app(settings=None, anthropic_client=None, twilio_client=None, mail=No
             await mail.send(s.handoff_email, subject, text)
 
     service = ReplyService(store, brain, s, notify)
+    rules = BookingRules(tz=s.timezone, days=s.booking_days, start=s.booking_start, end=s.booking_end,
+                         minutes=s.slot_minutes, days_ahead=s.booking_days_ahead)
+    bookings = BookingService(store, mail, rules, s.business_name, s.owner_email, s.mailbox, dry_run=s.dry_run,
+                              **({"now": now} if now else {}))
 
     @contextlib.asynccontextmanager
     async def lifespan(app):
@@ -102,6 +110,33 @@ def create_app(settings=None, anthropic_client=None, twilio_client=None, mail=No
 
     app = FastAPI(title="Reply Desk", lifespan=lifespan)
     app.state.service = service
+    app.state.bookings = bookings
+
+    @app.get("/book", response_class=HTMLResponse)
+    async def book_page():
+        return render_book_page(s.business_name, s.slot_minutes)
+
+    @app.get("/api/slots")
+    async def slots():
+        return {"slots": bookings.free_slots()}
+
+    @app.post("/api/book")
+    async def book(request: Request):
+        try:
+            data = await request.json()
+            if not isinstance(data, dict):
+                raise ValueError
+        except ValueError:
+            return JSONResponse({"error": "Please choose a time and fill in your details."}, status_code=400)
+        try:
+            result = await bookings.book(str(data.get("start") or ""), str(data.get("name") or ""),
+                                         str(data.get("email") or ""), str(data.get("phone") or ""),
+                                         str(data.get("note") or ""))
+        except BookingError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=409)
+        log.info("booking %s at %s for %s emailed=%s", result["id"], result["start"], mask(result["email"]),
+                 result["emailed"])
+        return {"when": result["when"], "id": result["id"]}
 
     @app.get("/health")
     async def health():

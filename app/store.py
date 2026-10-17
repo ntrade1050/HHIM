@@ -17,6 +17,9 @@ class Store:
                 CREATE INDEX IF NOT EXISTS turns_contact ON turns(channel, contact, ts);
                 CREATE TABLE IF NOT EXISTS processed (key TEXT PRIMARY KEY, ts REAL);
                 CREATE TABLE IF NOT EXISTS sends (channel TEXT, contact TEXT, ts REAL);
+                CREATE TABLE IF NOT EXISTS bookings (
+                    id TEXT PRIMARY KEY, start_utc TEXT UNIQUE, name TEXT, email TEXT,
+                    phone TEXT, note TEXT, created REAL);
                 """
             )
 
@@ -45,6 +48,21 @@ class Store:
                 (channel, contact, limit),
             ).fetchall()
         return [{"role": r, "content": t} for r, t in reversed(rows)]
+
+    def add_booking(self, booking_id, start_utc, name, email, phone, note) -> bool:
+        """False if the slot is already taken (the UNIQUE constraint stops double-booking)."""
+        with self._lock:
+            try:
+                self._db.execute("INSERT INTO bookings VALUES (?,?,?,?,?,?,?)",
+                                 (booking_id, start_utc, name, email, phone, note, time.time()))
+                self._db.commit()
+                return True
+            except sqlite3.IntegrityError:
+                return False
+
+    def booked_keys(self) -> set[str]:
+        with self._lock:
+            return {r[0] for r in self._db.execute("SELECT start_utc FROM bookings").fetchall()}
 
     def record_send(self, channel: str, contact: str) -> None:
         with self._lock:
