@@ -15,7 +15,7 @@ from .config import get_settings, load_env_file
 from .email_channels import GraphMail, ImapMail
 from .guards import email_should_skip, mask
 from .llm import build_llm
-from .sms import Sms
+from .sms import Sms, to_e164
 from .service import ReplyService
 from .store import Store
 
@@ -93,6 +93,7 @@ def create_app(settings=None, anthropic_client=None, twilio_client=None, mail=No
     brain = Brain(llm, s.business_name, s.knowledge_dir, s.booking_url)
 
     sms = Sms(twilio_client, s.sms_from, dry_run=s.dry_run)
+    testers = {n for n in (to_e164(x) for x in s.test_numbers.split(",")) if n}
 
     async def notify(subject, text):
         """Tell the owner: SMS to OWNER_PHONE and/or email to HANDOFF_EMAIL, whichever is set up."""
@@ -125,8 +126,8 @@ def create_app(settings=None, anthropic_client=None, twilio_client=None, mail=No
             tasks.append(asyncio.create_task(email_loop(service, mail, s)))
         if s.reminder_hours > 0 and sms.ready:
             tasks.append(asyncio.create_task(reminder_loop()))
-        log.info("Reply desk started: email=%s sms=%s dry_run=%s auto_reply=%s", s.email_provider, sms.ready,
-                 s.dry_run, s.auto_reply)
+        log.info("Reply desk started: MODE=%s testers=%d email=%s sms=%s dry_run=%s", s.bot_mode.upper(),
+                 len(testers), s.email_provider, sms.ready, s.dry_run)
         yield
         for task in tasks:
             task.cancel()
@@ -190,7 +191,8 @@ def create_app(settings=None, anthropic_client=None, twilio_client=None, mail=No
 
     @app.get("/health")
     async def health():
-        return {"ok": True, "email": s.email_provider, "dry_run": s.dry_run, "auto_reply": s.auto_reply}
+        return {"ok": True, "mode": s.bot_mode, "email": s.email_provider, "dry_run": s.dry_run,
+                "auto_reply": s.auto_reply}
 
     @app.post("/whatsapp")
     async def whatsapp(request: Request, background: BackgroundTasks):
@@ -200,8 +202,15 @@ def create_app(settings=None, anthropic_client=None, twilio_client=None, mail=No
             return Response(status_code=403)
         sid, sender, body = form.get("MessageSid", ""), form.get("From", ""), (form.get("Body") or "").strip()
         if sid and store.claim(f"wa:{sid}") and sender and body:
-            background.add_task(_whatsapp_reply, service, twilio_client, s, sender, body[:4000],
-                                form.get("ProfileName", ""))
+            if s.bot_mode == "test" and to_e164(sender) not in testers:
+                # Test mode: the bot stays silent for the public; the owner is texted so no enquiry is missed.
+                log.info("test mode: not replying to %s", mask(sender))
+                background.add_task(notify, "WhatsApp message (bot in test mode, not answered)",
+                                    f"From: {form.get('ProfileName', '')} {to_e164(sender)}\n\nTheir message:\n"
+                                    f"{to_e164(sender)}: {body[:300]}")
+            else:
+                background.add_task(_whatsapp_reply, service, twilio_client, s, sender, body[:4000],
+                                    form.get("ProfileName", ""))
         # Reply to Twilio straight away; the real answer is sent separately so we never hit its timeout.
         return Response(EMPTY_TWIML, media_type="application/xml")
 

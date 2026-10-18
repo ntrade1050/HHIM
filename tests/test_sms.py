@@ -100,3 +100,21 @@ def test_dry_run_sends_no_sms(tmp_path):
         start = c.get("/api/slots").json()["slots"][0]["start"]
         assert c.post("/api/book", json={"start": start, "name": "Jane", "phone": "07700 900123"}).status_code == 200
     assert not tw.sent
+
+
+def test_test_mode_only_answers_testers_and_texts_owner_the_rest(tmp_path):
+    app, tw, _ = make(tmp_path, bot_mode="test", test_numbers="07700 900111, 07700 900222")
+    with TestClient(app) as c:
+        assert c.get("/health").json()["mode"] == "test"
+        signed_post(c, {"MessageSid": "A", "From": "whatsapp:+447700900111", "Body": "Hi, tester here"})
+        signed_post(c, {"MessageSid": "B", "From": "whatsapp:+447700900555", "Body": "Real client: need VAT help"})
+    assert [m["to"] for m in whatsapp(tw)] == ["whatsapp:+447700900111"]  # only the tester got a bot reply
+    owner = [m for m in sms(tw) if m["to"] == "+447700900999"]
+    assert len(owner) == 1 and "test mode" in owner[0]["body"] and "need VAT help" in owner[0]["body"]
+
+
+def test_live_mode_answers_everyone(tmp_path):
+    app, tw, _ = make(tmp_path, bot_mode="live", test_numbers="07700 900111")
+    with TestClient(app) as c:
+        signed_post(c, {"MessageSid": "B", "From": "whatsapp:+447700900555", "Body": "Real client"})
+    assert [m["to"] for m in whatsapp(tw)] == ["whatsapp:+447700900555"]

@@ -31,6 +31,8 @@ class Settings:
     max_replies_per_contact_per_day: int
     handoff_email: str
     test_chat: bool
+    bot_mode: str       # "test" = only reply to TEST_NUMBERS; "live" = reply to everyone
+    test_numbers: str
     sms_from: str
     owner_phone: str
     reminder_hours: int
@@ -79,6 +81,8 @@ def get_settings() -> Settings:
         max_replies_per_contact_per_day=int(e("MAX_REPLIES_PER_CONTACT_PER_DAY", "20")),
         handoff_email=e("HANDOFF_EMAIL", ""),
         test_chat=_bool("TEST_CHAT", False),
+        bot_mode="test" if e("BOT_MODE", "live").strip().lower() == "test" else "live",
+        test_numbers=e("TEST_NUMBERS", ""),
         sms_from=e("SMS_FROM", ""),
         owner_phone=e("OWNER_PHONE", ""),
         reminder_hours=int(e("REMINDER_HOURS", "24")),

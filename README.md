@@ -30,7 +30,7 @@ cd reply-desk
 python -m venv .venv; .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 copy .env.example .env    # then fill it in
-python -m pytest -q       # 39 tests, all fakes, no cost
+python -m pytest -q       # 41 tests, all fakes, no cost
 uvicorn app.main:get_app --factory --port 8000
 ```
 Open http://localhost:8000/health to check it's running.
@@ -53,3 +53,7 @@ The service checks for unread mail every 30 seconds, replies in the same thread,
 
 ## Going live
 Test with `DRY_RUN=true` first and read the log. Then set `DRY_RUN=false`.
+
+## Test mode, then live
+Set `BOT_MODE=test` and put the owner's and testers' mobiles in `TEST_NUMBERS`. The bot only answers those numbers. Anyone else who messages gets no bot reply, and their message is texted to `OWNER_PHONE`, so nothing is missed.
+When the owner is happy, change the line to `BOT_MODE=live` and restart. `GET /health` shows which mode is running.
