@@ -57,3 +57,6 @@ Test with `DRY_RUN=true` first and read the log. Then set `DRY_RUN=false`.
 ## Test mode, then live
 Set `BOT_MODE=test` and put the owner's and testers' mobiles in `TEST_NUMBERS`. The bot only answers those numbers. Anyone else who messages gets no bot reply, and their message is texted to `OWNER_PHONE`, so nothing is missed.
 When the owner is happy, change the line to `BOT_MODE=live` and restart. `GET /health` shows which mode is running.
+
+## Blueprints
+`blueprints/accountancy/` is the reusable pack for accountancy firms, built from H.HIM. It holds what the client gets, the accounts to open, the questions for the owner, setup order, a test script, the lessons learned, and a knowledge template. Start every new accountancy client from it.
